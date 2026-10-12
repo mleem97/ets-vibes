@@ -11,6 +11,9 @@ pub enum SaveError {
     #[error("Crypto error: {0}")]
     Crypto(String),
 
+    #[error("Backup error: {0}")]
+    Backup(String),
+
     #[error("Parse error at line {line}: {message}")]
     Syntax { line: usize, message: String },
 

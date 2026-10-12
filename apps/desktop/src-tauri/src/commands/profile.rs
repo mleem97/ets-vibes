@@ -57,9 +57,9 @@ pub fn get_saves(profile_path: String) -> Result<Vec<SaveInfo>, String> {
 #[tauri::command]
 pub fn delete_profile(profile_path: String) -> Result<super::EditResult, String> {
     let path = std::path::Path::new(&profile_path);
-    crate::core::profile_ops::delete_profile(path).map_err(|e| e.to_string())?;
+    let backup = crate::core::profile_ops::delete_profile(path).map_err(|e| e.to_string())?;
     Ok(super::EditResult {
-        message: "Profile deleted (backup created)".into(),
-        backup: None,
+        message: format!("Profile deleted (backup: {})", backup.display()),
+        backup: Some(backup.to_string_lossy().to_string()),
     })
 }

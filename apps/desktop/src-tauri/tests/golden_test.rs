@@ -120,108 +120,55 @@ fn golden_refuel_all() {
     assert_matches_golden(doc.content(), "refuel_all.sii");
 }
 
-// --- unlock_all_cities ---
+// --- unlock_all_cities (through the real SaveEditor path) ---
+
+/// Set up a SaveFile layout pointing at `input.sii` content, run the real
+/// editor operation, and return the saved file content.
+fn run_editor_action(
+    action: impl FnOnce(
+        &mut ets_vibes_lib::save_parser::editor::SaveEditor,
+    ) -> Result<(), ets_vibes_lib::save_parser::error::SaveError>,
+) -> String {
+    use ets_vibes_lib::core::profile::SaveFile;
+    use ets_vibes_lib::save_parser::editor::SaveEditor;
+    let dir = tempfile::tempdir().unwrap();
+    let game_sii_dir = dir.path().join("save").join("quicksave");
+    fs::create_dir_all(&game_sii_dir).unwrap();
+    fs::write(game_sii_dir.join("game.sii"), read_input()).unwrap();
+
+    let mut editor = SaveEditor::new(SaveFile::new(
+        dir.path().to_path_buf(),
+        "quicksave".to_string(),
+    ));
+    editor.load().unwrap();
+    action(&mut editor).unwrap();
+    editor.save().unwrap();
+    fs::read_to_string(game_sii_dir.join("game.sii")).unwrap()
+}
 
 #[test]
 fn golden_unlock_cities() {
-    let content = read_input();
-    let mut doc = ets_vibes_lib::save_parser::sii::SiiDocument::new(content);
-
-    // Simulate unlock_all_cities logic
-    let all_cities = doc.get_array_property("cities");
-
-    let visited: std::collections::HashSet<String> = doc
-        .get_array_property("visited_cities")
-        .into_iter()
-        .collect();
-
-    let to_add: Vec<String> = all_cities
-        .iter()
-        .filter(|c| !visited.contains(*c))
-        .cloned()
-        .collect();
-
-    if !to_add.is_empty() {
-        let mut new_visited: Vec<String> = visited.into_iter().collect();
-        new_visited.extend(to_add.iter().cloned());
-        new_visited.sort();
-
-        doc.set_array_property("visited_cities", &new_visited)
-            .unwrap();
-
-        let counts: Vec<String> = std::iter::repeat_n("1".to_string(), new_visited.len()).collect();
-        doc.set_array_property("visited_cities_count", &counts)
-            .unwrap();
-    }
-
-    assert_matches_golden(doc.content(), "unlock_cities.sii");
+    let actual = run_editor_action(|editor| editor.unlock_all_cities().map(|_| ()));
+    assert_matches_golden(&actual, "unlock_cities.sii");
 }
 
 // --- full workflow (all operations) ---
 
 #[test]
 fn golden_full_workflow() {
-    let content = read_input();
-    let mut doc = ets_vibes_lib::save_parser::sii::SiiDocument::new(content);
+    // True end-to-end: every operation through the real SaveEditor,
+    // exactly like the app invokes them.
+    let actual = run_editor_action(|editor| {
+        editor.edit_money(99999).map(|_| ())?;
+        editor.edit_xp(5000).map(|_| ())?;
+        editor.max_skills().map(|_| ())?;
+        editor.repair_all().map(|_| ())?;
+        editor.refuel_all().map(|_| ())?;
+        editor.unlock_all_cities().map(|_| ())?;
+        Ok(())
+    });
 
-    // edit_money
-    doc.set_property("money_account", "99999").unwrap();
-
-    // edit_xp
-    doc.set_property("experience_points", "5000").unwrap();
-
-    // max_skills
-    for (name, value) in &[
-        ("adr", "63"),
-        ("long_dist", "6"),
-        ("heavy", "6"),
-        ("fragile", "6"),
-        ("urgent", "6"),
-        ("mechanical", "6"),
-    ] {
-        doc.set_property(name, value).unwrap();
-    }
-
-    // repair_all
-    for name in &[
-        "engine_wear",
-        "engine_wear_unfixable",
-        "transmission_wear",
-        "transmission_wear_unfixable",
-        "cabin_wear",
-        "cabin_wear_unfixable",
-        "chassis_wear",
-        "chassis_wear_unfixable",
-    ] {
-        doc.set_property(name, "0").unwrap();
-    }
-
-    // refuel_all
-    doc.set_property("fuel_relative", "1.0").unwrap();
-
-    // unlock_all_cities
-    let all_cities = doc.get_array_property("cities");
-    let visited: std::collections::HashSet<String> = doc
-        .get_array_property("visited_cities")
-        .into_iter()
-        .collect();
-    let to_add: Vec<String> = all_cities
-        .iter()
-        .filter(|c| !visited.contains(*c))
-        .cloned()
-        .collect();
-    if !to_add.is_empty() {
-        let mut new_visited: Vec<String> = visited.into_iter().collect();
-        new_visited.extend(to_add.iter().cloned());
-        new_visited.sort();
-        doc.set_array_property("visited_cities", &new_visited)
-            .unwrap();
-        let counts: Vec<String> = std::iter::repeat_n("1".to_string(), new_visited.len()).collect();
-        doc.set_array_property("visited_cities_count", &counts)
-            .unwrap();
-    }
-
-    assert_matches_golden(doc.content(), "full_workflow.sii");
+    assert_matches_golden(&actual, "full_workflow.sii");
 }
 
 // --- structural integrity tests ---

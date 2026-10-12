@@ -2,9 +2,9 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use crate::core::backup::backup_file;
+use crate::core::backup::{backup_file, write_file_atomic};
 use crate::core::compatibility::APP_VERSION;
-use crate::save_parser::config::{ConfigDocument, ConfigEntry};
+use crate::save_parser::config::{validate_entry, ConfigDocument, ConfigEntry, ConfigValueType};
 
 use super::EditResult;
 
@@ -54,7 +54,7 @@ pub fn load_config(path: String) -> Result<ConfigDocument, String> {
 #[tauri::command]
 pub fn save_config(path: String, entries: Vec<ConfigEntry>) -> Result<EditResult, String> {
     for entry in &entries {
-        if let Err(msg) = entry.val_type.validate(&entry.value) {
+        if let Err(msg) = validate_entry(&entry.key, entry.val_type, &entry.value) {
             return Err(format!("Validation error for {}: {}", entry.key, msg));
         }
     }
@@ -64,11 +64,62 @@ pub fn save_config(path: String, entries: Vec<ConfigEntry>) -> Result<EditResult
 
     let doc = ConfigDocument { entries };
     let content = doc.to_string();
-    std::fs::write(&path, content).map_err(|e| e.to_string())?;
+    write_file_atomic(file_path, content.as_bytes()).map_err(|e| e.to_string())?;
 
     let message = format!("Config saved (backup: {})", backup.display());
     Ok(EditResult {
         message,
         backup: Some(backup.to_string_lossy().to_string()),
+    })
+}
+
+/// One-click console activation: set `g_console 1` + `g_developer 1` in
+/// EVERY detected config.cfg (global, Proton prefixes, custom path),
+/// inserting the keys when missing. Each file is backed up first and
+/// written atomically — it does not matter which file the game reads.
+/// Only the two touched keys are validated, so unrelated entries can
+/// never block the preset.
+#[tauri::command]
+pub fn enable_console(custom_path: Option<String>) -> Result<EditResult, String> {
+    let custom_p = custom_path
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .map(Path::new);
+    let configs = crate::core::detection::find_config_files(custom_p);
+    if configs.is_empty() {
+        return Err("No config.cfg found. Set the game directory in Settings first.".into());
+    }
+
+    let mut updated = Vec::new();
+    let mut backups = Vec::new();
+    for path in &configs {
+        let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+        let mut doc = ConfigDocument::parse(&content);
+        if !doc.apply_console_preset() {
+            continue;
+        }
+        for key in ["g_console", "g_developer"] {
+            validate_entry(key, ConfigValueType::Int, "1")
+                .map_err(|msg| format!("{}: {}", path.display(), msg))?;
+        }
+        let backup = backup_file(path).map_err(|e| e.to_string())?;
+        write_file_atomic(path, doc.to_string().as_bytes()).map_err(|e| e.to_string())?;
+        updated.push(path.to_string_lossy().to_string());
+        backups.push(backup.to_string_lossy().to_string());
+    }
+
+    if updated.is_empty() {
+        return Ok(EditResult {
+            message: "Console already enabled in all configs.".into(),
+            backup: None,
+        });
+    }
+    Ok(EditResult {
+        message: format!(
+            "Console enabled in {} config(s): {}",
+            updated.len(),
+            updated.join(", ")
+        ),
+        backup: Some(backups.join("; ")),
     })
 }

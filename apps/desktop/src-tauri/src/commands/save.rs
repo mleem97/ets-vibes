@@ -2,7 +2,10 @@ use std::path::Path;
 
 use crate::core::backup::backup_file;
 use crate::save_parser::{
-    compression::decompress_save, editor::get_trucks_info, editor::SaveEditor, sii::SiiDocument,
+    compression::{decompress_save, detect_format, SaveFormat},
+    editor::get_trucks_info,
+    editor::SaveEditor,
+    sii::SiiDocument,
 };
 
 use super::helpers::{calc_level, read_info_sii, save_file_from_game_sii};
@@ -11,7 +14,7 @@ use super::{EditResult, SaveData};
 #[tauri::command]
 pub fn load_save(game_sii_path: String) -> Result<SaveData, String> {
     let data = std::fs::read(&game_sii_path).map_err(|e| e.to_string())?;
-    let was_compressed = data.len() >= 4 && &data[..4] == b"ScsC";
+    let was_compressed = detect_format(&data) == SaveFormat::EncryptedScsC;
     let content = decompress_save(&data).map_err(|e| e.to_string())?;
 
     let doc = SiiDocument::new(content);

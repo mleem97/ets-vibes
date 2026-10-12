@@ -33,6 +33,7 @@ player : _nameless.7646.a03f.a2e0 {
  cities[1]: paris
  visited_cities: 2
  visited_cities[0]: berlin
+ visited_cities[1]: paris
  visited_cities_count: 2
  visited_cities_count[0]: 1
 }
@@ -57,9 +58,5 @@ garage : garage.berlin {
  drivers: 0
  trailers: 0
  status: 0
- visited_cities[1]: paris
- visited_cities[0]: berlin
- visited_cities_count[1]: 1
- visited_cities_count[0]: 1
 }
 }

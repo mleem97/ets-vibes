@@ -5,6 +5,10 @@ export interface ConfigRange {
 }
 
 export const CONFIG_RANGES: Record<string, ConfigRange> = {
+  // g_developer 2 = map editor setup (per SCS mapping guide), so 0..2.
+  g_developer: { min: 0, max: 2, step: 1 },
+  // g_console is a plain on/off flag.
+  g_console: { min: 0, max: 1, step: 1 },
   g_traffic: { min: 0, max: 10, step: 0.1 },
   r_sun_shadow_texture_size: { min: 1024, max: 8192, step: 256 },
   r_buffer_page_size: { min: 10, max: 50, step: 1 },

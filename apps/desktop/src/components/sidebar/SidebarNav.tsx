@@ -88,9 +88,10 @@ export function SidebarNav({
   const customGamePath = useSettingsStore((s) => s.customGamePath);
   const activeWorkspace = useSaveEditorStore((s) => s.activeWorkspace);
   const setActiveWorkspace = useSaveEditorStore((s) => s.setActiveWorkspace);
+  const bsiiBlockedSave = useSaveEditorStore((s) => s.bsiiBlockedSave);
+  const setBsiiBlockedSave = useSaveEditorStore((s) => s.setBsiiBlockedSave);
   const [filter, setFilter] = useState("");
   const [expandedProfiles, setExpandedProfiles] = useState<Record<string, boolean>>({});
-  const [pendingSteamSave, setPendingSteamSave] = useState<SaveInfo | null>(null);
 
   function toggleProfileExpanded(path: string) {
     setExpandedProfiles((prev) => ({
@@ -99,13 +100,12 @@ export function SidebarNav({
     }));
   }
 
-  function onSaveClick(save: SaveInfo, isProfileSteam: boolean) {
-    const isSaveSteam = isSteamSynced(save.path) || isProfileSteam;
-    if (isSaveSteam) {
-      setPendingSteamSave(save);
-    } else {
-      onSelectSave(save);
-    }
+  // Try-first: every save is handed to the backend, which detects the real
+  // on-disk format. The BSII dialog only appears when loading actually
+  // failed with a binary-format error (see SaveEditorPage) — never from the
+  // path alone, so readable Steam saves open directly.
+  function onSaveClick(save: SaveInfo) {
+    onSelectSave(save);
   }
 
   const q = filter.toLowerCase().trim();
@@ -291,7 +291,7 @@ export function SidebarNav({
                                 <button
                                   key={save.path}
                                   type="button"
-                                  onClick={() => onSaveClick(save, isProfileSteam)}
+                                  onClick={() => onSaveClick(save)}
                                   className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs text-left transition-all ${
                                     isSaveSelected
                                       ? "bg-primary text-primary-foreground font-semibold shadow-xs"
@@ -419,29 +419,26 @@ export function SidebarNav({
         </div>
 
         <AlertDialog
-          open={pendingSteamSave !== null}
+          open={bsiiBlockedSave !== null}
           onOpenChange={(open) => {
-            if (!open) setPendingSteamSave(null);
+            if (!open) setBsiiBlockedSave(null);
           }}
         >
           <AlertDialogContent className="rounded-xl border border-border/40 max-w-md">
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2 text-amber-500 text-sm font-semibold">
                 <CloudOff className="h-5 w-5 shrink-0" />
-                Steam Cloud Synced Save
+                Binary Save Format (BSII)
               </AlertDialogTitle>
               <AlertDialogDescription asChild>
                 <div className="text-xs text-muted-foreground space-y-2 pt-2">
                   <p>
-                    This save (<strong>{pendingSteamSave?.save_name}</strong>) belongs to a Steam
-                    Cloud-synced profile.
-                  </p>
-                  <p>
-                    Synced saves frequently use the binary <strong>BSII</strong> format which cannot
-                    be parsed or edited by ETS Vibes.
+                    This save (<strong>{bsiiBlockedSave?.save_name}</strong>) is stored in
+                    the binary <strong>BSII</strong> format, which cannot be parsed or edited
+                    by ETS Vibes. Steam Cloud-synced profiles commonly use this format.
                   </p>
                   <div className="bg-amber-500/10 text-amber-600 dark:text-amber-400 p-3 rounded-lg text-[11px] space-y-1">
-                    <p className="font-semibold text-amber-500">To edit this profile:</p>
+                    <p className="font-semibold text-amber-500">To convert this save:</p>
                     <ol className="list-decimal list-inside space-y-1 text-[11px]">
                       <li>Open Euro Truck Simulator 2</li>
                       <li>
@@ -453,7 +450,7 @@ export function SidebarNav({
                           g_save_format 2
                         </code>
                       </li>
-                      <li>Save game in-game & reload profiles in ETS Vibes</li>
+                      <li>Load this save in-game, save again & reload profiles in ETS Vibes</li>
                     </ol>
                   </div>
                 </div>

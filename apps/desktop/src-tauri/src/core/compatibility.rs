@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The latest ETS2 version this app was tested against. Always update this when a new ETS2 version is released and tested.
-pub const TESTED_GAME_VERSION: GameVersion = GameVersion::new(1, 60, 1);
+pub const TESTED_GAME_VERSION: GameVersion = GameVersion::new(1, 61, 0);
 
 /// Minimum supported game version.
 pub const MIN_GAME_VERSION: GameVersion = GameVersion::new(1, 53, 0);
@@ -129,17 +129,30 @@ mod tests {
 
     #[test]
     fn test_check_supported() {
-        let status = check_compatibility("1.60.1.7");
+        let status = check_compatibility("1.61.0.100");
         assert_eq!(status, CompatibilityStatus::Supported);
     }
 
     #[test]
     fn test_check_untested_newer() {
-        let status = check_compatibility("1.61.0.0");
+        let status = check_compatibility("1.62.0.0");
         assert_eq!(
             status,
             CompatibilityStatus::Untested {
-                detected_version: "1.61.0".to_string()
+                detected_version: "1.62.0".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_check_previous_minor_now_untested() {
+        // 1.60 was previously the tested version; after the 1.61 bump it
+        // reports as Untested (still usable, warning shown in UI).
+        let status = check_compatibility("1.60.1.7");
+        assert_eq!(
+            status,
+            CompatibilityStatus::Untested {
+                detected_version: "1.60.1".to_string()
             }
         );
     }
@@ -176,7 +189,7 @@ mod tests {
 
     #[test]
     fn test_to_display() {
-        let v = GameVersion::new(1, 60, 1);
-        assert_eq!(v.to_display(), "1.60.1");
+        let v = GameVersion::new(1, 61, 0);
+        assert_eq!(v.to_display(), "1.61.0");
     }
 }

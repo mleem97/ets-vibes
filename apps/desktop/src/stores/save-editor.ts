@@ -15,6 +15,8 @@ export interface SaveEditorState {
   xpInput: string;
   activeWorkspace: WorkspaceTab;
   selectedConfigPath: string | null;
+  /** Save whose load failed with a real BSII binary-format error (not persisted). */
+  bsiiBlockedSave: SaveInfo | null;
 
   setProfiles: (profiles: ProfileInfo[]) => void;
   setSaves: (saves: SaveInfo[]) => void;
@@ -25,6 +27,7 @@ export interface SaveEditorState {
   setXpInput: (value: string) => void;
   setActiveWorkspace: (workspace: WorkspaceTab) => void;
   setSelectedConfigPath: (path: string | null) => void;
+  setBsiiBlockedSave: (save: SaveInfo | null) => void;
 }
 
 export const useSaveEditorStore = create<SaveEditorState>()(
@@ -39,6 +42,7 @@ export const useSaveEditorStore = create<SaveEditorState>()(
       xpInput: "",
       activeWorkspace: "saves",
       selectedConfigPath: null,
+      bsiiBlockedSave: null,
 
       setProfiles: (profiles) => set({ profiles }),
       setSaves: (saves) => set({ saves }),
@@ -49,6 +53,7 @@ export const useSaveEditorStore = create<SaveEditorState>()(
       setXpInput: (xpInput) => set({ xpInput }),
       setActiveWorkspace: (activeWorkspace) => set({ activeWorkspace }),
       setSelectedConfigPath: (selectedConfigPath) => set({ selectedConfigPath }),
+      setBsiiBlockedSave: (bsiiBlockedSave) => set({ bsiiBlockedSave }),
     }),
     {
       name: "save-editor",

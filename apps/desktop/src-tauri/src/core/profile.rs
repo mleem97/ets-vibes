@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::core::detection::{all_games, get_current_platform, GameConfig, Platform};
+use crate::core::detection::{all_games, dedupe_key, get_current_platform, GameConfig, Platform};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SaveFile {
@@ -96,7 +96,8 @@ impl ProfileDetector {
             if custom_path.is_dir() {
                 scan_profiles_dir(custom_path, &mut profiles, &mut seen);
 
-                if custom_path.join("profile.sii").exists() && seen.insert(custom_path.clone()) {
+                if custom_path.join("profile.sii").exists() && seen.insert(dedupe_key(custom_path))
+                {
                     let name = custom_path
                         .file_name()
                         .map(|n| n.to_string_lossy().to_string())
@@ -147,7 +148,7 @@ fn scan_profiles_dir(
             let profile_path = entry.path();
             if profile_path.is_dir()
                 && profile_path.join("profile.sii").exists()
-                && seen.insert(profile_path.clone())
+                && seen.insert(dedupe_key(&profile_path))
             {
                 let name = profile_path
                     .file_name()
@@ -260,5 +261,24 @@ mod tests {
 
         let profiles = detector.get_profiles();
         assert!(profiles.iter().any(|p| p.display_name() == "Test"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_same_profile_via_symlink_listed_once() {
+        use std::os::unix::fs::symlink;
+        let temp_dir = tempfile::tempdir().unwrap();
+        let prof_dir = temp_dir.path().join("real").join("54657374");
+        std::fs::create_dir_all(&prof_dir).unwrap();
+        std::fs::write(prof_dir.join("profile.sii"), b"SiiNunit").unwrap();
+        let alias = temp_dir.path().join("alias");
+        symlink(temp_dir.path().join("real"), &alias).unwrap();
+
+        let mut detector = ProfileDetector::with_games(vec![]);
+        detector.custom_paths.push(temp_dir.path().join("real"));
+        detector.custom_paths.push(alias);
+
+        let profiles = detector.get_profiles();
+        assert_eq!(profiles.len(), 1);
     }
 }

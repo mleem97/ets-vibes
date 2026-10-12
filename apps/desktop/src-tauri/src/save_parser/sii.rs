@@ -13,6 +13,31 @@ pub struct SiiDocument {
     content: String,
 }
 
+/// Byte offset right after this array's own block: end of its last
+/// `name[N]` line, else end of its `name: count` line. Used to insert new
+/// array items into the correct section instead of at end-of-file.
+fn array_insert_pos(content: &str, property_name: &str) -> Option<usize> {
+    let escaped = regex::escape(property_name);
+    let indexed_pattern = format!(r"(?m)^\s*{}\[\d+\]\s*:.*$", escaped);
+    if let Ok(re) = Regex::new(&indexed_pattern) {
+        if let Some(end) = re
+            .captures_iter(content)
+            .last()
+            .and_then(|c| c.get(0))
+            .map(|m| m.end())
+        {
+            return Some(end);
+        }
+    }
+    let count_pattern = format!(r"(?m)^\s*{}\s*:.*$", escaped);
+    if let Ok(re) = Regex::new(&count_pattern) {
+        if let Some(m) = re.find(content) {
+            return Some(m.end());
+        }
+    }
+    None
+}
+
 impl SiiDocument {
     pub fn new(content: String) -> Self {
         Self { content }
@@ -73,6 +98,8 @@ impl SiiDocument {
             changed = true;
         }
 
+        // Fallback anchor when the array is completely absent (should not
+        // happen in real saves, which always carry the count line).
         let last_prop_line = PROPERTY_RE
             .captures_iter(&self.content)
             .last()
@@ -89,10 +116,20 @@ impl SiiDocument {
                     changed = true;
                 }
                 Ok(false) => {
-                    if let Some((_, end)) = last_prop_line {
-                        let insertion = format!("\n {}: {}", indexed_name, value);
-                        self.content.insert_str(end, &insertion);
-                        changed = true;
+                    // set_property reports false both when the value is
+                    // identical and when the property is missing — only
+                    // insert in the latter case.
+                    if self.get_property(&indexed_name).is_none() {
+                        // Insert directly after this array's own block (last
+                        // `name[N]` line, else the `name: count` line) so new
+                        // entries land in the correct section — never at EOF.
+                        let anchor = array_insert_pos(&self.content, property_name)
+                            .or(last_prop_line.map(|(_, end)| end));
+                        if let Some(pos) = anchor {
+                            let insertion = format!("\n {}: {}", indexed_name, value);
+                            self.content.insert_str(pos, &insertion);
+                            changed = true;
+                        }
                     }
                 }
                 Err(e) => return Err(e),

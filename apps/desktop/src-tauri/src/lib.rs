@@ -26,6 +26,7 @@ pub fn run() {
             commands::config::list_configs,
             commands::config::load_config,
             commands::config::save_config,
+            commands::config::enable_console,
             commands::config::get_app_info,
         ]);
 

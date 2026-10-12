@@ -1,7 +1,8 @@
+use crate::core::backup::write_file_atomic;
 use crate::core::models::TruckInfo;
 use crate::core::profile::SaveFile;
 
-use crate::save_parser::compression::{compress_save, decompress_save};
+use crate::save_parser::compression::decompress_save;
 use crate::save_parser::error::SaveError;
 use crate::save_parser::sii::SiiDocument;
 
@@ -369,7 +370,30 @@ mod editor_tests {
         let content = fs::read_to_string(dir.path().join("save/save/game.sii")).unwrap();
         assert!(content.contains("money_account: 200"));
     }
+    #[test]
+    fn test_save_encrypted_scsc_writes_loadable_plaintext() {
+        // Regression: the game loads plaintext (SiiN) saves regardless of its
+        // configured save format, so saves are always written as plaintext —
+        // never re-encrypted (no HMAC guessing).
+        use crate::save_parser::compression::{compress_save, detect_format, SaveFormat};
+        let dir = tempfile::tempdir().unwrap();
+        let game_sii_dir = dir.path().join("save").join("save");
+        fs::create_dir_all(&game_sii_dir).unwrap();
+        let encrypted = compress_save("SiiNunit\n{\n money_account: 100\n}\n").unwrap();
+        assert_eq!(detect_format(&encrypted), SaveFormat::EncryptedScsC);
+        fs::write(game_sii_dir.join("game.sii"), &encrypted).unwrap();
 
+        let save_file = SaveFile::new(dir.path().to_path_buf(), "save".to_string());
+        let mut editor = SaveEditor::new(save_file);
+        editor.load().unwrap();
+        editor.edit_money(200).unwrap();
+        editor.save().unwrap();
+
+        let written = fs::read(game_sii_dir.join("game.sii")).unwrap();
+        assert_eq!(detect_format(&written), SaveFormat::PlaintextSiiN);
+        let text = String::from_utf8(written).unwrap();
+        assert!(text.contains("money_account: 200"));
+    }
     #[test]
     fn test_full_workflow() {
         let (mut editor, _dir) = make_save_editor(
@@ -439,7 +463,6 @@ fn extract_section<'a>(content: &'a str, section_name: &str) -> Option<&'a str> 
 pub struct SaveEditor {
     save_file: SaveFile,
     document: Option<SiiDocument>,
-    was_compressed: bool,
 }
 
 impl SaveEditor {
@@ -447,13 +470,11 @@ impl SaveEditor {
         Self {
             save_file,
             document: None,
-            was_compressed: false,
         }
     }
 
     pub fn load(&mut self) -> Result<(), SaveError> {
         let data = std::fs::read(&self.save_file.game_sii_path)?;
-        self.was_compressed = data.len() >= 4 && &data[..4] == b"ScsC";
         let content = decompress_save(&data)?;
         self.document = Some(SiiDocument::new(content));
         Ok(())
@@ -535,8 +556,10 @@ impl SaveEditor {
 
         doc.set_array_property("visited_cities", &new_visited)?;
 
-        let counts: Vec<String> = std::iter::repeat_n("1".to_string(), new_visited.len()).collect();
-        doc.set_array_property("visited_cities_count", &counts)?;
+        // `visited_cities_count` is a plain scalar total — update it in
+        // place. (Never create indexed `visited_cities_count[N]` lines;
+        // real saves don't have them and the game rejects the file.)
+        doc.set_property("visited_cities_count", &new_visited.len().to_string())?;
 
         Ok(to_add.len())
     }
@@ -598,20 +621,21 @@ impl SaveEditor {
         Ok(changed)
     }
 
+    /// Save as plaintext (SiiN). The game loads plaintext saves regardless
+    /// of its configured save format (it only controls what the game itself
+    /// writes) — this is established community behavior, so plaintext is
+    /// the safest output: no re-encryption, no HMAC guessing.
+    /// The write is atomic (temp file + rename). Callers must create a
+    /// backup (see `core::backup`) before calling this.
     pub fn save(&mut self) -> Result<(), SaveError> {
         let content = self.document()?.content().to_string();
-        std::fs::write(&self.save_file.game_sii_path, content.as_bytes())?;
+        write_file_atomic(&self.save_file.game_sii_path, content.as_bytes())
+            .map_err(|e| SaveError::Backup(e.to_string()))?;
         Ok(())
     }
 
+    /// Kept for backwards compatibility; identical to [`Self::save`].
     pub fn save_encrypted(&mut self) -> Result<(), SaveError> {
-        let content = self.document()?.content().to_string();
-        let data = if self.was_compressed {
-            compress_save(&content)?
-        } else {
-            content.as_bytes().to_vec()
-        };
-        std::fs::write(&self.save_file.game_sii_path, data)?;
-        Ok(())
+        self.save()
     }
 }

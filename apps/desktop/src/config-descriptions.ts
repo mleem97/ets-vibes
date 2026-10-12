@@ -354,8 +354,9 @@ export const CONFIG_DESCRIPTIONS: Record<string, string> = {
 
   // Developer / Debug Access
   g_developer:
-    "Enables developer mode: advanced commands, free camera, and testing tools. Not intended for normal play.",
-  g_console: "Enables the in-game command console, opened with the ' or ~ key.",
+    "Enables developer mode: advanced commands, free camera, and testing tools. Not intended for normal play. 0 = off, 1 = on, 2 = map editor setup.",
+  g_console:
+    "Enables the in-game command console, opened with the ' or ~ key. Only 0 (off) or 1 (on).",
   g_console_state:
     "Internal flag: whether the console was open or closed when you last exited (0 = closed).",
   g_fps: "Shows an on-screen FPS and performance counter.",

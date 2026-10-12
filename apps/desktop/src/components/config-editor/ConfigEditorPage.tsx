@@ -159,6 +159,23 @@ export function ConfigEditorPage({
     }
   }, [selectedConfig, configDoc, onStatusChange]);
 
+  // One click: g_console + g_developer = 1 in EVERY detected config.cfg
+  // (global, Proton prefixes, custom path) — whichever file the game reads.
+  const onEnableConsole = useCallback(async () => {
+    onStatusChange("Enabling console in all configs...");
+    try {
+      const result = await invoke<EditResult>("enable_console", {
+        customPath: customGamePath || null,
+      });
+      toast.success(result.message);
+      onStatusChange(result.message);
+      if (selectedConfig) await selectConfig(selectedConfig);
+    } catch (e) {
+      toast.error(String(e));
+      onStatusChange(`Error: ${e}`);
+    }
+  }, [customGamePath, onStatusChange, selectConfig, selectedConfig]);
+
   const onConfigValueChange = useCallback(
     (key: string, value: string, type: ConfigValueType) => {
       if (!configDoc) return;
@@ -245,6 +262,16 @@ export function ConfigEditorPage({
           configCategory={configCategory}
           onCategoryChange={setConfigCategory}
         />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onEnableConsole}
+          disabled={readOnly}
+          title="Set g_console + g_developer to 1 in every detected config.cfg"
+          className="gap-2"
+        >
+          <span>Enable console</span>
+        </Button>
         <Button
           variant="default"
           size="sm"

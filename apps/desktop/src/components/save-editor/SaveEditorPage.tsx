@@ -54,6 +54,7 @@ export function SaveEditorPage({ readOnly, onStatusChange, onReloadSaves }: Save
   const setMoneyInput = useSaveEditorStore((s) => s.setMoneyInput);
   const setXpInput = useSaveEditorStore((s) => s.setXpInput);
   const setSelectedSave = useSaveEditorStore((s) => s.setSelectedSave);
+  const setBsiiBlockedSave = useSaveEditorStore((s) => s.setBsiiBlockedSave);
 
   const [deleteTarget, setDeleteTarget] = useState<"save" | null>(null);
   const [pendingAction, setPendingAction] = useState<QuickAction | null>(null);
@@ -82,6 +83,7 @@ export function SaveEditorPage({ readOnly, onStatusChange, onReloadSaves }: Save
       .then((data) => {
         if (!active) return;
         setSaveData(data);
+        setBsiiBlockedSave(null);
         setMoneyInput(data.money_account ?? "");
         setXpInput(data.experience_points ?? "");
         const msg = `Save loaded${data.was_compressed ? " (was compressed)" : " (plaintext)"}`;
@@ -89,8 +91,16 @@ export function SaveEditorPage({ readOnly, onStatusChange, onReloadSaves }: Save
       })
       .catch((e) => {
         if (!active) return;
-        toast.error(String(e));
-        onStatusChange(`Error: ${e}`);
+        const message = String(e);
+        toast.error(message);
+        onStatusChange(`Error: ${message}`);
+        // Only a real binary-format failure opens the BSII conversion dialog.
+        // Every other save loads directly — no game settings needed.
+        if (/BSII|g_save_format/i.test(message)) {
+          setBsiiBlockedSave(useSaveEditorStore.getState().selectedSave);
+        } else {
+          setBsiiBlockedSave(null);
+        }
       })
       .finally(() => {
         if (active) setIsLoading(false);
@@ -99,7 +109,7 @@ export function SaveEditorPage({ readOnly, onStatusChange, onReloadSaves }: Save
     return () => {
       active = false;
     };
-  }, [saveSiiPath, refetchKey, onStatusChange, setSaveData, setMoneyInput, setXpInput]);
+  }, [saveSiiPath, refetchKey, onStatusChange, setSaveData, setMoneyInput, setXpInput, setBsiiBlockedSave]);
 
   // --- Edit Money/XP ---
   const onEdit = useCallback(async () => {

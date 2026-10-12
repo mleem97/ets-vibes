@@ -59,6 +59,29 @@ impl ConfigValueType {
     }
 }
 
+/// Config keys with a fixed set of allowed values: the game resets anything
+/// else to the default. `g_developer` accepts `2` (map editor setup, per the
+/// SCS mapping guide) while `g_console` is a plain on/off flag.
+pub const KEY_ALLOWED_VALUES: &[(&str, &[&str])] = &[
+    ("g_console", &["0", "1"]),
+    ("g_developer", &["0", "1", "2"]),
+];
+
+/// Key-aware validation: keys with fixed allowed values reject anything
+/// else; everything else falls back to plain type validation.
+pub fn validate_entry(key: &str, val_type: ConfigValueType, value: &str) -> Result<(), String> {
+    if let Some((_, allowed)) = KEY_ALLOWED_VALUES.iter().find(|(k, _)| *k == key) {
+        if !allowed.contains(&value) {
+            return Err(format!(
+                "{key} only accepts {} — got '{value}'",
+                allowed.join(", ")
+            ));
+        }
+        return Ok(());
+    }
+    val_type.validate(value)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigEntry {
     pub prefix: String,
@@ -138,6 +161,33 @@ impl ConfigDocument {
         for (key, value) in changes {
             self.set(key, value);
         }
+    }
+
+    /// Console preset: set `g_console` and `g_developer` to `"1"`,
+    /// inserting the keys when the file does not have them.
+    /// Returns true when anything changed.
+    pub fn apply_console_preset(&mut self) -> bool {
+        let mut changed = false;
+        for key in ["g_console", "g_developer"] {
+            match self.get(key) {
+                Some(entry) if entry.value == "1" => {}
+                Some(_) => {
+                    self.set(key, "1");
+                    changed = true;
+                }
+                None => {
+                    self.entries.push(ConfigEntry {
+                        prefix: "uset".to_string(),
+                        key: key.to_string(),
+                        value: "1".to_string(),
+                        category: categorize(key),
+                        val_type: ConfigValueType::Int,
+                    });
+                    changed = true;
+                }
+            }
+        }
+        changed
     }
 }
 
@@ -264,6 +314,82 @@ mod tests {
     fn test_validate_string() {
         assert!(ConfigValueType::String.validate("anything").is_ok());
         assert!(ConfigValueType::String.validate("").is_ok());
+    }
+
+    // --- validate_entry (key-aware) ---
+
+    #[test]
+    fn test_validate_entry_console_accepts_zero_one() {
+        assert!(validate_entry("g_console", ConfigValueType::Int, "0").is_ok());
+        assert!(validate_entry("g_console", ConfigValueType::Int, "1").is_ok());
+    }
+
+    #[test]
+    fn test_validate_entry_console_rejects_other() {
+        for bad in ["2", "-1", "42", "true", "false", "", "1.0"] {
+            assert!(
+                validate_entry("g_console", ConfigValueType::Int, bad).is_err(),
+                "g_console={bad} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_entry_developer_accepts_zero_one_two() {
+        // "2" is the documented map-editor setup value (SCS mapping guide).
+        for good in ["0", "1", "2"] {
+            assert!(
+                validate_entry("g_developer", ConfigValueType::Int, good).is_ok(),
+                "g_developer={good} should be accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_entry_developer_rejects_other() {
+        for bad in ["3", "-1", "true", ""] {
+            assert!(
+                validate_entry("g_developer", ConfigValueType::Int, bad).is_err(),
+                "g_developer={bad} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_entry_other_keys_unchanged() {
+        assert!(validate_entry("g_traffic", ConfigValueType::Int, "5").is_ok());
+        assert!(validate_entry("g_traffic", ConfigValueType::Int, "abc").is_err());
+    }
+
+    // --- ConfigDocument::apply_console_preset ---
+
+    #[test]
+    fn test_console_preset_updates_existing() {
+        let mut doc = ConfigDocument::parse("uset g_console \"0\"\nuset g_developer \"0\"\n");
+        assert!(doc.apply_console_preset());
+        assert_eq!(doc.get("g_console").unwrap().value, "1");
+        assert_eq!(doc.get("g_developer").unwrap().value, "1");
+    }
+
+    #[test]
+    fn test_console_preset_inserts_missing() {
+        let mut doc = ConfigDocument::parse("uset g_traffic \"1\"\n");
+        assert!(doc.apply_console_preset());
+        let console = doc.get("g_console").unwrap();
+        assert_eq!(console.value, "1");
+        assert_eq!(console.prefix, "uset");
+        let dev = doc.get("g_developer").unwrap();
+        assert_eq!(dev.value, "1");
+        // Serializes back to valid config lines.
+        let text = doc.to_string();
+        assert!(text.contains("uset g_console \"1\""));
+        assert!(text.contains("uset g_developer \"1\""));
+    }
+
+    #[test]
+    fn test_console_preset_noop_when_enabled() {
+        let mut doc = ConfigDocument::parse("uset g_console \"1\"\nuset g_developer \"1\"\n");
+        assert!(!doc.apply_console_preset());
     }
 
     // --- ConfigDocument::parse ---
