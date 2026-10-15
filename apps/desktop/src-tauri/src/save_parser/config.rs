@@ -59,25 +59,121 @@ impl ConfigValueType {
     }
 }
 
-/// Config keys with a fixed set of allowed values: the game resets anything
-/// else to the default. `g_developer` accepts `2` (map editor setup, per the
-/// SCS mapping guide) while `g_console` is a plain on/off flag.
-pub const KEY_ALLOWED_VALUES: &[(&str, &[&str])] = &[
-    ("g_console", &["0", "1"]),
-    ("g_developer", &["0", "1", "2"]),
+/// Value domain of a config key, as documented by SCS (modding wiki,
+/// mapping guide) and community guides. The game resets anything else to
+/// the default, so the editor rejects it upfront with a clear message.
+/// Only SCS-documented domains are listed — version- or mod-dependent keys
+/// (e.g. `g_currency`, `g_cargo_sort`, `r_device`) are deliberately absent.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum KeyDomain {
+    /// Exact string match required (e.g. on/off flags, enum modes).
+    Allowed(&'static [&'static str]),
+    /// Inclusive numeric range.
+    Range { min: f64, max: f64 },
+}
+
+pub const KEY_DOMAINS: &[(&str, KeyDomain)] = &[
+    ("g_adviser", KeyDomain::Allowed(&["0", "1", "2"])),
+    ("g_brake_light_all", KeyDomain::Allowed(&["0", "1"])),
+    (
+        "g_cam_steering_reverse",
+        KeyDomain::Allowed(&["0", "1", "2"]),
+    ),
+    ("g_clock_24", KeyDomain::Allowed(&["0", "1"])),
+    ("g_console", KeyDomain::Allowed(&["0", "1"])),
+    ("g_developer", KeyDomain::Allowed(&["0", "1", "2"])),
+    ("g_fahrenheit", KeyDomain::Allowed(&["0", "1"])),
+    (
+        "g_force_load_selector",
+        KeyDomain::Allowed(&["-1", "0", "1"]),
+    ),
+    ("g_gallon", KeyDomain::Allowed(&["0", "1"])),
+    ("g_gfx_advanced", KeyDomain::Allowed(&["0", "1"])),
+    (
+        "g_global_force_load_selector",
+        KeyDomain::Allowed(&["0", "1"]),
+    ),
+    ("g_grass_density", KeyDomain::Allowed(&["0", "1", "2", "3"])),
+    ("g_hshifter_layout", KeyDomain::Allowed(&["0", "1", "2"])),
+    ("g_hud_speed_limit", KeyDomain::Allowed(&["0", "1", "2"])),
+    ("g_mph", KeyDomain::Allowed(&["0", "1"])),
+    ("g_news", KeyDomain::Allowed(&["-1", "0", "1"])),
+    (
+        "g_online_loading_screens",
+        KeyDomain::Allowed(&["-1", "0", "1"]),
+    ),
+    (
+        "g_parking_difficulty",
+        KeyDomain::Allowed(&["0", "1", "2", "3"]),
+    ),
+    (
+        "g_rain_reflection",
+        KeyDomain::Allowed(&["0", "1", "2", "3"]),
+    ),
+    ("g_reflection", KeyDomain::Allowed(&["0", "1", "2", "3"])),
+    ("g_save_format", KeyDomain::Allowed(&["0", "1", "2", "3"])),
+    ("g_steam_screenshots", KeyDomain::Allowed(&["0", "1", "2"])),
+    ("g_trans", KeyDomain::Allowed(&["0", "1", "2", "3"])),
+    ("g_truck_light_quality", KeyDomain::Allowed(&["0", "1"])),
+    ("g_veg_detail", KeyDomain::Allowed(&["0", "1", "2"])),
+    ("r_color_correction", KeyDomain::Allowed(&["0", "1", "2"])),
+    ("r_fake_shadows", KeyDomain::Allowed(&["0", "1", "2"])),
+    (
+        "r_multimon_mode",
+        KeyDomain::Allowed(&["0", "1", "2", "3", "4"]),
+    ),
+    ("r_nv_stereo_mode", KeyDomain::Allowed(&["0", "1", "2"])),
+    ("g_income_factor", KeyDomain::Range { min: 0.0, max: 1.0 }),
+    (
+        "g_traffic",
+        KeyDomain::Range {
+            min: 0.0,
+            max: 10.0,
+        },
+    ),
+    (
+        "r_color_cyan_red",
+        KeyDomain::Range {
+            min: -1.0,
+            max: 1.0,
+        },
+    ),
+    (
+        "r_color_magenta_green",
+        KeyDomain::Range {
+            min: -1.0,
+            max: 1.0,
+        },
+    ),
+    (
+        "r_color_yellow_blue",
+        KeyDomain::Range {
+            min: -1.0,
+            max: 1.0,
+        },
+    ),
 ];
 
-/// Key-aware validation: keys with fixed allowed values reject anything
-/// else; everything else falls back to plain type validation.
+/// Key-aware validation: keys with a documented domain reject anything
+/// outside it; everything else falls back to plain type validation.
 pub fn validate_entry(key: &str, val_type: ConfigValueType, value: &str) -> Result<(), String> {
-    if let Some((_, allowed)) = KEY_ALLOWED_VALUES.iter().find(|(k, _)| *k == key) {
-        if !allowed.contains(&value) {
-            return Err(format!(
-                "{key} only accepts {} — got '{value}'",
-                allowed.join(", ")
-            ));
-        }
-        return Ok(());
+    if let Some((_, domain)) = KEY_DOMAINS.iter().find(|(k, _)| *k == key) {
+        return match domain {
+            KeyDomain::Allowed(allowed) => {
+                if allowed.contains(&value) {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "{key} only accepts {} — got '{value}'",
+                        allowed.join(", ")
+                    ))
+                }
+            }
+            KeyDomain::Range { min, max } => match value.parse::<f64>() {
+                Ok(v) if v >= *min && v <= *max => Ok(()),
+                _ => Err(format!("{key} accepts {min}…{max} — got '{value}'")),
+            },
+        };
     }
     val_type.validate(value)
 }
@@ -357,8 +453,41 @@ mod tests {
 
     #[test]
     fn test_validate_entry_other_keys_unchanged() {
-        assert!(validate_entry("g_traffic", ConfigValueType::Int, "5").is_ok());
-        assert!(validate_entry("g_traffic", ConfigValueType::Int, "abc").is_err());
+        // g_flyspeed has no documented domain: plain type validation applies.
+        assert!(validate_entry("g_flyspeed", ConfigValueType::Float, "321.5").is_ok());
+        assert!(validate_entry("g_flyspeed", ConfigValueType::Float, "abc").is_err());
+    }
+
+    #[test]
+    fn test_key_domains_all_documented_values_pass() {
+        for (key, domain) in KEY_DOMAINS {
+            match domain {
+                KeyDomain::Allowed(allowed) => {
+                    for value in *allowed {
+                        assert!(
+                            validate_entry(key, ConfigValueType::Int, value).is_ok(),
+                            "{key}={value} should be accepted"
+                        );
+                    }
+                    assert!(
+                        validate_entry(key, ConfigValueType::Int, "999").is_err(),
+                        "{key}=999 should be rejected"
+                    );
+                }
+                KeyDomain::Range { min, max } => {
+                    for value in [min.to_string(), max.to_string()] {
+                        assert!(
+                            validate_entry(key, ConfigValueType::Float, &value).is_ok(),
+                            "{key}={value} should be accepted"
+                        );
+                    }
+                    assert!(
+                        validate_entry(key, ConfigValueType::Float, "999").is_err(),
+                        "{key}=999 should be rejected"
+                    );
+                }
+            }
+        }
     }
 
     // --- ConfigDocument::apply_console_preset ---

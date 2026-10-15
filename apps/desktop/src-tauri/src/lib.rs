@@ -14,6 +14,7 @@ pub fn run() {
             commands::profile::list_profiles,
             commands::profile::get_saves,
             commands::profile::delete_profile,
+            commands::profile::list_profile_files,
             commands::save::load_save,
             commands::save::edit_save,
             commands::save::unlock_cities,

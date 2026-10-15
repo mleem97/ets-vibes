@@ -63,3 +63,11 @@ pub fn delete_profile(profile_path: String) -> Result<super::EditResult, String>
         backup: Some(backup.to_string_lossy().to_string()),
     })
 }
+
+#[tauri::command]
+pub fn list_profile_files(
+    profile_path: String,
+) -> Result<Vec<crate::core::file_taxonomy::FileEntry>, String> {
+    let path = std::path::Path::new(&profile_path);
+    crate::core::file_taxonomy::list_profile_files(path).map_err(|e| e.to_string())
+}
